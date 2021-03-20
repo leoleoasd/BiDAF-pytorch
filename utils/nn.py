@@ -11,7 +11,7 @@ class LSTM(nn.Module):
                            num_layers=num_layers,
                            bidirectional=bidirectional,
                            batch_first=batch_first)
-        self.reset_params()
+        # self.reset_params()
         self.dropout = nn.Dropout(p=dropout)
 
     def reset_params(self):
@@ -34,6 +34,7 @@ class LSTM(nn.Module):
         x = self.dropout(x)
 
         x_len_sorted, x_idx = torch.sort(x_len, descending=True)
+        x_len_sorted = x_len_sorted.cpu()
         x_sorted = x.index_select(dim=0, index=x_idx)
         _, x_ori_idx = torch.sort(x_idx)
 

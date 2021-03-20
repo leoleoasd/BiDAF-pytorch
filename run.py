@@ -10,6 +10,7 @@ from model.model import BiDAF
 from model.data import SQuAD
 from model.ema import EMA
 import evaluate
+from tqdm import tqdm
 
 
 def train(args, data):
@@ -20,8 +21,10 @@ def train(args, data):
     for name, param in model.named_parameters():
         if param.requires_grad:
             ema.register(name, param.data)
-    parameters = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = optim.Adadelta(parameters, lr=args.learning_rate)
+    for name, i in model.named_parameters():
+        if not i.is_leaf:
+            print(name,i)
+    optimizer = optim.Adadelta(model.parameters(), lr=args.learning_rate)
     criterion = nn.CrossEntropyLoss()
 
     writer = SummaryWriter(log_dir='runs/' + args.model_time)
@@ -31,7 +34,7 @@ def train(args, data):
     max_dev_exact, max_dev_f1 = -1, -1
 
     iterator = data.train_iter
-    for i, batch in enumerate(iterator):
+    for i, batch in tqdm(enumerate(iterator), total = len(iterator) * args.epoch):
         present_epoch = int(iterator.epoch)
         if present_epoch == args.epoch:
             break
@@ -52,6 +55,7 @@ def train(args, data):
                 ema.update(name, param.data)
 
         if (i + 1) % args.print_freq == 0:
+            torch.cuda.empty_cache()
             dev_loss, dev_exact, dev_f1 = test(model, ema, args, data)
             c = (i + 1) // args.print_freq
 

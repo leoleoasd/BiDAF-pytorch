@@ -1,2 +1,7 @@
-.data/squad/*.jsonl
-.data/squad/*torch*
+runs
+.vector_cache
+.idea
+saved_models
+.data
+prediction0.out
+**/__pycache__
