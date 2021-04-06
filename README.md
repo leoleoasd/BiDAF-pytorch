@@ -1,6 +1,6 @@
 # BiDAF-pytorch
 Re-implementation of [BiDAF](https://arxiv.org/abs/1611.01603)(Bidirectional Attention Flow for Machine Comprehension, Minjoon Seo et al., ICLR 2017) on PyTorch.
-
+http://stuffs.leoleoasd.me:2093/LnfFkuoie5lsD4aoaDFZKA#p=PY&fp=CFD3B317145127A3A40F7DF944116200A8300F4E08E40F2F10F216AE2BBB0142
 ## Results
 
 Dataset: [SQuAD v1.1](https://rajpurkar.github.io/SQuAD-explorer/)

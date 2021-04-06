@@ -11,6 +11,7 @@ class BiDAF(nn.Module):
         self.args = args
 
         # 1. Character Embedding Layer
+        # args.char_vocab_size
         self.char_emb = nn.Embedding(args.char_vocab_size, args.char_dim, padding_idx=1)
         nn.init.uniform_(self.char_emb.weight, -0.001, 0.001)
 
