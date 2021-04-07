@@ -14,9 +14,13 @@ from tqdm import tqdm
 
 
 def train(args, data):
+    if args.load_model != "":
+        model = BiDAF(args, data.WORD.vocab.vectors)
+        model.load_state_dict(torch.load(args.load_model))
+    else:
+        model = BiDAF(args, data.WORD.vocab.vectors)
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
-    model = BiDAF(args, data.WORD.vocab.vectors).to(device)
-
+    model = model.to(device)
     ema = EMA(args.exp_decay_rate)
     for name, param in model.named_parameters():
         if param.requires_grad:
@@ -27,7 +31,7 @@ def train(args, data):
     optimizer = optim.Adadelta(model.parameters(), lr=args.learning_rate)
     criterion = nn.CrossEntropyLoss()
 
-    writer = SummaryWriter(log_dir='runs/' + args.model_time)
+    writer = SummaryWriter(log_dir='runs/' + args.model_name)
 
     model.train()
     loss, last_epoch = 0, -1
@@ -132,7 +136,6 @@ def main():
     parser.add_argument('--char-channel-size', default=100, type=int)
     parser.add_argument('--context-threshold', default=400, type=int)
     parser.add_argument('--dev-batch-size', default=100, type=int)
-    parser.add_argument('--dev-file', default='dev-v1.1.json')
     parser.add_argument('--dropout', default=0.2, type=float)
     parser.add_argument('--epoch', default=12, type=int)
     parser.add_argument('--exp-decay-rate', default=0.999, type=float)
@@ -141,24 +144,31 @@ def main():
     parser.add_argument('--learning-rate', default=0.5, type=float)
     parser.add_argument('--print-freq', default=250, type=int)
     parser.add_argument('--train-batch-size', default=60, type=int)
-    parser.add_argument('--train-file', default='train-v1.1.json')
+    parser.add_argument('--train-files', default=['train-v1.1.json'], nargs='+')
+    parser.add_argument('--dev-files', default=['dev-v1.1.json',], nargs='+')
+    # parser.add_argument('--other-train-file', default='bioasq-9b-train.json')
+    # parser.add_argument('--other-dev-file', default='bioasq-9b-dev.json')
     parser.add_argument('--word-dim', default=100, type=int)
+    parser.add_argument('--force-build-split', default=True, type=bool)
+    parser.add_argument('--load-model', default="")
+    parser.add_argument('--model-name', default=strftime('%Y-%m-%d-%H:%M:%S', gmtime()))
     args = parser.parse_args()
+    print("Args: ", args)
 
     print('loading SQuAD data...')
     data = SQuAD(args)
     setattr(args, 'char_vocab_size', len(data.CHAR.vocab))
     setattr(args, 'word_vocab_size', len(data.WORD.vocab))
-    setattr(args, 'dataset_file', f'.data/squad/{args.dev_file}')
+    setattr(args, 'dataset_file', f'.data/squad/{args.dev_files[0]}')
     setattr(args, 'prediction_file', f'prediction{args.gpu}.out')
-    setattr(args, 'model_time', strftime('%H:%M:%S', gmtime()))
+    # setattr(args, 'epoch', [int(i) for i in args.epoch])
     print('data loading complete!')
 
     print('training start!')
     best_model = train(args, data)
     if not os.path.exists('saved_models'):
         os.makedirs('saved_models')
-    torch.save(best_model.state_dict(), f'saved_models/BiDAF_{args.model_time}.pt')
+    torch.save(best_model.state_dict(), f'saved_models/BiDAF_{args.model_name}.pt')
     print('training finished!')
 
 
