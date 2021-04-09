@@ -51,16 +51,19 @@ class SQuAD():
                        ('c_word', self.WORD), ('c_char', self.CHAR),
                        ('q_word', self.WORD), ('q_char', self.CHAR)]
 
+        self.train = []
+        self.dev = []
+
         if all([os.path.exists(i) for i in train_examples_paths + dev_examples_paths]):
             print("loading splits...")
             for i in train_examples_paths:
                 examples = torch.load(i)
                 print(i, ":", len(examples))
-                self.train = data.Dataset(examples=examples, fields=list_fields)
+                self.train.append(data.Dataset(examples=examples, fields=list_fields))
             for i in dev_examples_paths:
                 examples = torch.load(i)
                 print(i, ":", len(examples))
-                self.dev = data.Dataset(examples=examples, fields=list_fields)
+                self.dev.append(data.Dataset(examples=examples, fields=list_fields))
 
             # train_examples = torch.load(train_examples_path)
             # dev_examples = torch.load(dev_examples_path)
@@ -92,35 +95,57 @@ class SQuAD():
                     pass
                 torch.save(train.examples, train_examples_paths[i])
                 torch.save(dev.examples, dev_examples_paths[i])
-                self.train = (train)
-                self.dev = (dev)
+                self.train.append(train)
+                self.dev.append(dev)
 
         #cut too long context in the training set for efficiency.
         if args.context_threshold > 0:
-            self.train.examples = [e for e in self.train.examples if len(e.c_word) <= args.context_threshold]
+            for i in range(0, len(self.train)):
+                self.train[i].examples = [e for e in self.train[i].examples if len(e.c_word) <= args.context_threshold]
+            # self.other_train.examples = [e for e in self.other_train.examples if len(e.c_word) <= args.context_threshold]
 
         print("building vocab...")
-        self.CHAR.build_vocab(self.train, self.dev)
-        self.WORD.build_vocab(self.train, self.dev, vectors=GloVe(name='6B', dim=args.word_dim))
-
+        self.CHAR.build_vocab(*self.train, *self.dev)
+        self.WORD.build_vocab(*self.train, *self.dev, vectors=GloVe(name='6B', dim=args.word_dim))
+        print("CHAR SIZE", len(self.CHAR.vocab))
+        print("WORD SIZE", len(self.WORD.vocab))
         print("building iterators...")
         device = torch.device("cuda:{}".format(args.gpu) if torch.cuda.is_available() else "cpu")
-        self.train_iter = data.BucketIterator(
-            self.train,
-            batch_size=args.train_batch_size,
-            device=device,
-            repeat=True,
-            shuffle=True,
-            sort_key=lambda x: len(x.c_word)
-        )
 
-        self.dev_iter = data.BucketIterator(
-            self.dev,
-            batch_size=args.dev_batch_size,
-            device=device,
-            repeat=False,
-            sort_key=lambda x: len(x.c_word)
-        )
+        def train_bucket_iter(train):
+            for i in range(0, len(train)):
+                yield data.BucketIterator(
+                    train.pop(0),
+                    batch_size=args.train_batch_size,
+                    device=device,
+                    repeat=True,
+                    shuffle=True,
+                    sort_key=lambda x: len(x.c_word)
+                )
+
+        self.train_iter = train_bucket_iter(self.train)
+        # for i in self.train:
+        #     self.train_iter.append()
+        #
+        def dev_bucket_iter(dev):
+            for i in range(0, len(dev)):
+                yield data.BucketIterator(
+                    dev.pop(0),
+                    batch_size=args.dev_batch_size,
+                    device=device,
+                    repeat=False,
+                    sort_key=lambda x: len(x.c_word)
+                )
+
+        self.dev_iter = dev_bucket_iter(self.dev)
+        # for i in self.dev:
+        #     self.dev_iter.append(data.BucketIterator(
+        #     i,
+        #     batch_size=args.dev_batch_size,
+        #     device=device,
+        #     repeat=False,
+        #     sort_key=lambda x: len(x.c_word)
+        # ))
 
         # self.train_iter, self.dev_iter = \
         #    data.BucketIterator.splits((self.train, self.dev),
