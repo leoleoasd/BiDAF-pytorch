@@ -33,17 +33,20 @@ def train(args, data):
 
     writer = SummaryWriter(log_dir='runs/' + args.model_name)
 
-    model.train()
-    loss, last_epoch = 0, 0
-    max_dev_exact, max_dev_f1 = -1, -1
 
-    for iterator, jj in zip(data.train_iter, range(0, len(data.train_iter))):
-        for i, batch in tqdm(enumerate(iterator), total = len(iterator) * args.epoch[jj], ncols=100):
+    for iterator, dev_iter, dev_file_name, index in zip(data.train_iter, data.dev_iter, args.dev_files, range(len(data.train))):
+        model.train()
+        loss, last_epoch = 0, 0
+        max_dev_exact, max_dev_f1 = -1, -1
+        print(f"Training with {dev_file_name}")
+        print()
+        for i, batch in tqdm(enumerate(iterator), total=len(iterator) * args.epoch[index], ncols=100):
             present_epoch = int(iterator.epoch)
-            if present_epoch == args.epoch[jj]:
-                break
             eva = False
-            if last_epoch != present_epoch:
+            if present_epoch == args.epoch[index]:
+                break
+            if present_epoch > last_epoch:
+                print('epoch:', present_epoch + 1)
                 eva = True
             last_epoch = present_epoch
 
@@ -55,13 +58,13 @@ def train(args, data):
             batch_loss.backward()
             optimizer.step()
 
-            if eva:
-                for name, param in model.named_parameters():
-                    if param.requires_grad:
-                        ema.update(name, param.data)
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    ema.update(name, param.data)
 
-                torch.cuda.empty_cache()
-                dev_loss, dev_exact, dev_f1 = test(model, ema, args, data, jj)
+            torch.cuda.empty_cache()
+            if (i + 1) % args.print_freq == 0 or eva:
+                dev_loss, dev_exact, dev_f1 = test(model, ema, args, data, dev_iter, dev_file_name)
                 c = (i + 1) // args.print_freq
 
                 writer.add_scalar('loss/train', loss, c)
@@ -86,7 +89,7 @@ def train(args, data):
     return best_model
 
 
-def test(model, ema, args, data, index):
+def test(model, ema, args, data, dev_iter, filename):
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     criterion = nn.CrossEntropyLoss()
     loss = 0
@@ -100,7 +103,7 @@ def test(model, ema, args, data, index):
             param.data.copy_(ema.get(name))
 
     with torch.set_grad_enabled(False):
-        for batch in iter(data.dev_iter[index]):
+        for batch in iter(dev_iter):
             p1, p2 = model(batch)
             batch_loss = criterion(p1, batch.s_idx) + criterion(p2, batch.e_idx)
             loss += batch_loss.item()
@@ -127,7 +130,7 @@ def test(model, ema, args, data, index):
     with open(args.prediction_file, 'w', encoding='utf-8') as f:
         print(json.dumps(answers), file=f)
 
-    setattr(args, 'dataset_file', f'.data/squad/{args.dev_files[index]}')
+    setattr(args, 'dataset_file', f'.data/squad/{filename}')
     results = evaluate.main(args)
     return loss, results['exact_match'], results['f1']
 
@@ -140,7 +143,7 @@ def main():
     parser.add_argument('--context-threshold', default=400, type=int)
     parser.add_argument('--dev-batch-size', default=100, type=int)
     parser.add_argument('--dropout', default=0.2, type=float)
-    parser.add_argument('--epoch', default=[5,5], nargs='+')
+    parser.add_argument('--epoch', default=[5,10], nargs='+')
     parser.add_argument('--exp-decay-rate', default=0.999, type=float)
     parser.add_argument('--gpu', default=0, type=int)
     parser.add_argument('--hidden-size', default=100, type=int)

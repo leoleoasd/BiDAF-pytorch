@@ -89,7 +89,10 @@ class SQuAD():
                     format='json',
                     fields=dict_fields)
 
-                os.makedirs(train_examples_paths[i])
+                try:
+                    os.makedirs("".join(os.path.split(train_examples_paths[i])[:-1]))
+                except FileExistsError:
+                    pass
                 torch.save(train.examples, train_examples_paths[i])
                 torch.save(dev.examples, dev_examples_paths[i])
                 self.train.append(train)
@@ -108,29 +111,41 @@ class SQuAD():
         print("WORD SIZE", len(self.WORD.vocab))
         print("building iterators...")
         device = torch.device("cuda:{}".format(args.gpu) if torch.cuda.is_available() else "cpu")
-        self.train_iter = [
-            data.BucketIterator(
-                i,
-                batch_size=args.train_batch_size,
-                device=device,
-                repeat=True,
-                shuffle=True,
-                sort_key=lambda x: len(x.c_word)
-            )
-            for i in self.train
-        ]
 
+        def train_bucket_iter(train):
+            for i in range(0, len(train)):
+                yield data.BucketIterator(
+                    train.pop(0),
+                    batch_size=args.train_batch_size,
+                    device=device,
+                    repeat=True,
+                    shuffle=True,
+                    sort_key=lambda x: len(x.c_word)
+                )
 
-        self.dev_iter = [
-            data.BucketIterator(
-                i,
-                batch_size=args.dev_batch_size,
-                device=device,
-                repeat=False,
-                sort_key=lambda x: len(x.c_word)
-            )
-            for i in self.dev
-        ]
+        self.train_iter = train_bucket_iter(self.train)
+        # for i in self.train:
+        #     self.train_iter.append()
+        #
+        def dev_bucket_iter(dev):
+            for i in range(0, len(dev)):
+                yield data.BucketIterator(
+                    dev.pop(0),
+                    batch_size=args.dev_batch_size,
+                    device=device,
+                    repeat=False,
+                    sort_key=lambda x: len(x.c_word)
+                )
+
+        self.dev_iter = dev_bucket_iter(self.dev)
+        # for i in self.dev:
+        #     self.dev_iter.append(data.BucketIterator(
+        #     i,
+        #     batch_size=args.dev_batch_size,
+        #     device=device,
+        #     repeat=False,
+        #     sort_key=lambda x: len(x.c_word)
+        # ))
 
         # self.train_iter, self.dev_iter = \
         #    data.BucketIterator.splits((self.train, self.dev),
