@@ -28,13 +28,14 @@ def train(args, data):
     for name, i in model.named_parameters():
         if not i.is_leaf:
             print(name,i)
-    optimizer = optim.Adadelta(model.parameters(), lr=args.learning_rate)
-    criterion = nn.CrossEntropyLoss()
 
     writer = SummaryWriter(log_dir='runs/' + args.model_name)
+    best_model = None
 
+    for iterator, dev_iter, dev_file_name, index, print_freq, lr in zip(data.train_iter, data.dev_iter, args.dev_files, range(len(data.train)), args.print_freq, args.learning_rate):
 
-    for iterator, dev_iter, dev_file_name, index in zip(data.train_iter, data.dev_iter, args.dev_files, range(len(data.train))):
+        optimizer = optim.Adadelta(model.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss()
         model.train()
         loss, last_epoch = 0, 0
         max_dev_exact, max_dev_f1 = -1, -1
@@ -63,9 +64,9 @@ def train(args, data):
                     ema.update(name, param.data)
 
             torch.cuda.empty_cache()
-            if (i + 1) % args.print_freq == 0 or eva:
+            if (i + 1) % print_freq == 0 or eva:
                 dev_loss, dev_exact, dev_f1 = test(model, ema, args, data, dev_iter, dev_file_name)
-                c = (i + 1) // args.print_freq
+                c = (i + 1) // print_freq
 
                 writer.add_scalar('loss/train', loss, c)
                 writer.add_scalar('loss/dev', dev_loss, c)
@@ -85,7 +86,11 @@ def train(args, data):
 
     writer.close()
     print(f'max dev EM: {max_dev_exact:.3f} / max dev F1: {max_dev_f1:.3f}')
+    print("testing with test batch on best model")
+    test_loss, test_exact, test_f1 = test(best_model, ema, args, data, list(data.test_iter)[-1], args.test_files[-1])
 
+    print(f'test loss: {test_loss:.3f}'
+          f' / test EM: {test_exact:.3f} / test F1: {test_f1:.3f}')
     return best_model
 
 
@@ -140,20 +145,20 @@ def main():
     parser.add_argument('--char-dim', default=8, type=int)
     parser.add_argument('--char-channel-width', default=5, type=int)
     parser.add_argument('--char-channel-size', default=100, type=int)
-    parser.add_argument('--context-threshold', default=400, type=int)
-    parser.add_argument('--dev-batch-size', default=100, type=int)
+    parser.add_argument('--context-threshold', default=500, type=int)
+    parser.add_argument('--dev-batch-size', default=50, type=int)
     parser.add_argument('--dropout', default=0.2, type=float)
-    parser.add_argument('--epoch', default=[5,10], nargs='+')
+    parser.add_argument('--epoch', default=[15,20], nargs='+')
     parser.add_argument('--exp-decay-rate', default=0.999, type=float)
     parser.add_argument('--gpu', default=0, type=int)
     parser.add_argument('--hidden-size', default=100, type=int)
-    parser.add_argument('--learning-rate', default=0.5, type=float)
-    parser.add_argument('--print-freq', default=250, type=int)
+    parser.add_argument('--learning-rate', default=[0.5, 0.05], nargs='+')
+    parser.add_argument('--print-freq', default=[2000, 50], type=int)
     parser.add_argument('--train-batch-size', default=60, type=int)
-    parser.add_argument('--train-files', default=['train-v1.1.json', 'bioasq-9b-train.json'], nargs='+')
-    parser.add_argument('--dev-files', default=['dev-v1.1.json', 'bioasq-9b-dev.json'], nargs='+')
-    # parser.add_argument('--other-train-file', default='bioasq-9b-train.json')
-    # parser.add_argument('--other-dev-file', default='bioasq-9b-dev.json')
+    parser.add_argument('--test-batch-size', default=60, type=int)
+    parser.add_argument('--train-files', default=['train-v1.1.json', 'bioasq-6b-train.json'], nargs='+')
+    parser.add_argument('--dev-files', default=['dev-v1.1.json', 'bioasq-6b-dev.json'], nargs='+')
+    parser.add_argument('--test-files', default=['dev-v1.1.json', 'bioasq-6b-test.json'], nargs='+')
     parser.add_argument('--word-dim', default=100, type=int)
     parser.add_argument('--force-build-split', default=True, type=bool)
     parser.add_argument('--load-model', default="")

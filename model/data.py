@@ -19,10 +19,12 @@ class SQuAD():
         path = '.data/squad'
         train_examples_paths = []
         dev_examples_paths = []
+        test_examples_paths = []
         for i in args.dev_files:
             dataset_path = path + '/torchtext/' + i.replace("/", "_") + "/"
             train_examples_paths.append(dataset_path + 'train_examples.pt')
             dev_examples_paths.append(dataset_path + 'dev_examples.pt')
+            test_examples_paths.append(dataset_path + 'test_examples.pt')
 
 
         print("preprocessing data files...")
@@ -30,6 +32,9 @@ class SQuAD():
             if not os.path.exists('{}/{}l'.format(path, i)):
                 self.preprocess_file('{}/{}'.format(path, i))
         for i in args.train_files:
+            if not os.path.exists('{}/{}l'.format(path, i)):
+                self.preprocess_file('{}/{}'.format(path, i))
+        for i in args.test_files:
             if not os.path.exists('{}/{}l'.format(path, i)):
                 self.preprocess_file('{}/{}'.format(path, i))
 
@@ -53,8 +58,9 @@ class SQuAD():
 
         self.train = []
         self.dev = []
+        self.test = []
 
-        if all([os.path.exists(i) for i in train_examples_paths + dev_examples_paths]):
+        if all([os.path.exists(i) for i in train_examples_paths + dev_examples_paths + test_examples_paths]):
             print("loading splits...")
             for i in train_examples_paths:
                 examples = torch.load(i)
@@ -64,28 +70,18 @@ class SQuAD():
                 examples = torch.load(i)
                 print(i, ":", len(examples))
                 self.dev.append(data.Dataset(examples=examples, fields=list_fields))
-
-            # train_examples = torch.load(train_examples_path)
-            # dev_examples = torch.load(dev_examples_path)
-            # other_train_examples = torch.load(other_train_examples_path)
-            # other_dev_examples = torch.load(other_dev_examples_path)
-
-            # print(train_examples.__len__())
-            # print(dev_examples.__len__())
-            # print(other_train_examples.__len__())
-            # print(other_dev_examples.__len__())
-            #
-            # self.train = data.Dataset(examples=train_examples, fields=list_fields)
-            # self.dev = data.Dataset(examples=dev_examples, fields=list_fields)
-            # self.other_train = data.Dataset(examples=other_train_examples, fields=list_fields)
-            # self.other_dev = data.Dataset(examples=other_dev_examples, fields=list_fields)
+            for i in test_examples_paths:
+                examples = torch.load(i)
+                print(i, ":", len(examples))
+                self.test.append(data.Dataset(examples=examples, fields=list_fields))
         else:
             print("building splits...")
-            for train_path, dev_path, i in zip(args.train_files, args.dev_files, range(0, len(args.train_files))):
-                train, dev = data.TabularDataset.splits(
+            for train_path, dev_path, test_path, i in zip(args.train_files, args.dev_files, args.test_files, range(0, len(args.train_files))):
+                train, dev, test  = data.TabularDataset.splits(
                     path=path,
                     train='{}l'.format(train_path),
                     validation='{}l'.format(dev_path),
+                    test='{}l'.format(test_path),
                     format='json',
                     fields=dict_fields)
 
@@ -95,18 +91,22 @@ class SQuAD():
                     pass
                 torch.save(train.examples, train_examples_paths[i])
                 torch.save(dev.examples, dev_examples_paths[i])
+                torch.save(test.examples, test_examples_paths[i])
                 self.train.append(train)
                 self.dev.append(dev)
+                self.test.append(test)
 
         #cut too long context in the training set for efficiency.
         if args.context_threshold > 0:
             for i in range(0, len(self.train)):
+                print(len(self.train[i].examples))
                 self.train[i].examples = [e for e in self.train[i].examples if len(e.c_word) <= args.context_threshold]
+                print(len(self.train[i].examples))
             # self.other_train.examples = [e for e in self.other_train.examples if len(e.c_word) <= args.context_threshold]
 
         print("building vocab...")
-        self.CHAR.build_vocab(*self.train, *self.dev)
-        self.WORD.build_vocab(*self.train, *self.dev, vectors=GloVe(name='6B', dim=args.word_dim))
+        self.CHAR.build_vocab(*self.train, *self.dev, *self.test)
+        self.WORD.build_vocab(*self.train, *self.dev, *self.test, vectors=GloVe(name='6B', dim=args.word_dim))
         print("CHAR SIZE", len(self.CHAR.vocab))
         print("WORD SIZE", len(self.WORD.vocab))
         print("building iterators...")
@@ -124,9 +124,7 @@ class SQuAD():
                 )
 
         self.train_iter = train_bucket_iter(self.train)
-        # for i in self.train:
-        #     self.train_iter.append()
-        #
+
         def dev_bucket_iter(dev):
             for i in range(0, len(dev)):
                 yield data.BucketIterator(
@@ -138,20 +136,18 @@ class SQuAD():
                 )
 
         self.dev_iter = dev_bucket_iter(self.dev)
-        # for i in self.dev:
-        #     self.dev_iter.append(data.BucketIterator(
-        #     i,
-        #     batch_size=args.dev_batch_size,
-        #     device=device,
-        #     repeat=False,
-        #     sort_key=lambda x: len(x.c_word)
-        # ))
 
-        # self.train_iter, self.dev_iter = \
-        #    data.BucketIterator.splits((self.train, self.dev),
-        #                               batch_sizes=[args.train_batch_size, args.dev_batch_size],
-        #                               device=device,
-        #                               sort_key=lambda x: len(x.c_word))
+        def test_bucket_iter(test):
+            for i in range(0, len(test)):
+                yield data.BucketIterator(
+                    test.pop(0),
+                    batch_size=args.test_batch_size,
+                    device=device,
+                    repeat=False,
+                    sort_key=lambda x: len(x.c_word)
+                )
+
+        self.test_iter = test_bucket_iter(self.test)
 
     def preprocess_file(self, path):
         dump = []
