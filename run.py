@@ -11,6 +11,7 @@ from model.data import SQuAD
 from model.ema import EMA
 import evaluate
 from tqdm import tqdm
+from IPython import embed
 
 
 def train(args, data):
@@ -33,7 +34,10 @@ def train(args, data):
     best_model = None
 
     for iterator, dev_iter, dev_file_name, index, print_freq, lr in zip(data.train_iter, data.dev_iter, args.dev_files, range(len(data.train)), args.print_freq, args.learning_rate):
-
+        # print
+        # (iterator[0])
+        embed()
+        exit(0)
         optimizer = optim.Adadelta(model.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss()
         model.train()
